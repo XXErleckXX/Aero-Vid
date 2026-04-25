@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AeroVid — Panel de Viticultura de Precisión</title>
+  <meta name="description" content="Panel de agricultura de precisión para monitorización de viñedos en Castilla-La Mancha mediante imágenes multiespectrales con drones DJI Dock 3." />
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@0.323.0/dist/umd/lucide.min.js"></script>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
+          colors: {
+            brand:   { 50:'#f0f1fe', 100:'#e3e4fd', 200:'#cccefa', 300:'#A2A6F2', 400:'#8186ee', 500:'#6366e8', 600:'#4f4fd4', 700:'#3f3fb8', 800:'#333395', 900:'#2d2d78' },
+            navy:    { 50:'#e8f4fc', 100:'#c9e3f5', 200:'#94c7eb', 300:'#509fd4', 400:'#1a7ab8', 500:'#074973', 600:'#063d61', 700:'#053150', 800:'#04263e', 900:'#031a2d' },
+            teal:    { 50:'#edf8f8', 100:'#d5eff0', 200:'#aedfe0', 300:'#7fcbcc', 400:'#58A6A6', 500:'#498d8d', 600:'#3b7272', 700:'#2d5858', 800:'#1f3e3e', 900:'#142929' },
+            leaf:    { 50:'#f2f8ed', 100:'#e2f0d7', 200:'#c6e1b0', 300:'#a5ce83', 400:'#90BF6F', 500:'#73a352', 600:'#5d8742', 700:'#476a33', 800:'#334e25', 900:'#1f3117' },
+            dark:    { 50:'#e6e6e6', 100:'#b3b3b3', 200:'#808080', 300:'#4d4d4d', 400:'#333333', 500:'#1a1a1a', 600:'#0D0D0D', 700:'#0a0a0a', 800:'#050505', 900:'#000000' },
+          }
+        }
+      }
+    };
+  </script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', system-ui, sans-serif; background: #f4f6fa; color: #1e293b; overflow: hidden; height: 100vh; }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 99px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    /* Layout */
+    .app-grid {
+      display: grid;
+      grid-template-columns: 280px 1fr 370px;
+      grid-template-rows: 64px 1fr;
+      height: 100vh;
+    }
+    .navbar { grid-column: 1 / -1; }
+    .sidebar { grid-column: 1; overflow-y: auto; }
+    .map-area { grid-column: 2; position: relative; }
+    .data-panel { grid-column: 3; overflow-y: auto; }
+
+    /* Leaflet overrides */
+    .leaflet-container { background: #1e293b; }
+    .leaflet-popup-content-wrapper { border-radius: 12px; box-shadow: 0 12px 40px rgba(0,0,0,.18); border: 1px solid #e2e8f0; }
+    .leaflet-popup-content { margin: 14px 18px; font-family: 'Inter', sans-serif; font-size: 13px; line-height: 1.6; }
+    .leaflet-popup-tip { box-shadow: none; }
+
+    /* Card */
+    .card {
+      background: #fff;
+      border: 1px solid #e8ecf1;
+      border-radius: 14px;
+      padding: 18px;
+      transition: box-shadow .25s ease, transform .2s ease;
+    }
+    .card:hover {
+      box-shadow: 0 8px 30px rgba(0,0,0,.06);
+      transform: translateY(-1px);
+    }
+
+    /* Filter button */
+    .filter-btn {
+      display: flex; align-items: center; gap: 8px;
+      width: 100%; padding: 10px 14px;
+      border: 1.5px solid #e2e8f0; border-radius: 10px;
+      background: #fff; cursor: pointer;
+      font-size: 13px; font-weight: 500; color: #475569;
+      transition: all .2s ease;
+    }
+    .filter-btn:hover { border-color: #A2A6F2; color: #074973; background: #f0f1fe; }
+    .filter-btn.active {
+      border-color: #074973; background: linear-gradient(135deg, #f0f1fe 0%, #e3e4fd 100%);
+      color: #074973; font-weight: 600;
+      box-shadow: 0 2px 8px rgba(7,73,115,.12);
+    }
+
+    /* Badge */
+    .status-badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 10px; border-radius: 99px;
+      font-size: 11px; font-weight: 600; letter-spacing: .3px;
+    }
+
+    /* KPI */
+    .kpi-value { font-size: 28px; font-weight: 700; line-height: 1; letter-spacing: -.5px; }
+
+    /* Pulse animation */
+    @keyframes pulse-dot { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.5;transform:1.4)} }
+    .pulse-dot { animation: pulse-dot 2s ease-in-out infinite; }
+
+    /* Subtle entrance */
+    @keyframes fadeUp { from{opacity:0;transform:translateY(12px)} to{opacity:1;transform:translateY(0)} }
+    .animate-in { animation: fadeUp .45s ease-out both; }
+
+    /* Map overlay gradient */
+    .map-overlay-bottom {
+      position: absolute; bottom: 0; left: 0; right: 0;
+      height: 80px;
+      background: linear-gradient(to top, rgba(244,246,250,.7) 0%, transparent 100%);
+      pointer-events: none; z-index: 500;
+    }
+
+    /* Navbar gradient accent */
+    .navbar-accent {
+      position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+      background: linear-gradient(90deg, #074973 0%, #58A6A6 35%, #90BF6F 65%, #A2A6F2 100%);
+    }
+
+    /* NDVI chart fix */
+    .trend-chart-container {
+      position: relative;
+      width: 100%;
+      height: 150px;
+    }
+
+    /* Responsive */
+    @media (max-width: 1200px) {
+      .app-grid { grid-template-columns: 260px 1fr; }
+      .data-panel { display: none; }
+    }
+    @media (max-width: 768px) {
+      .app-grid { grid-template-columns: 1fr; grid-template-rows: 64px auto 1fr; }
+      .sidebar { grid-column: 1; max-height: 220px; }
+      .map-area { grid-column: 1; min-height: 400px; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="app-grid">
+
+  <!-- ═══════════════ NAVBAR ═══════════════ -->
+  <nav class="navbar flex items-center justify-between px-6 bg-white border-b border-gray-200 z-50 relative">
+    <div class="navbar-accent"></div>
+    <div class="flex items-center gap-3">
+      <!-- Logo -->
+      <img src="Logo.jpeg" alt="AeroVid Logo" class="w-10 h-10 rounded-lg object-contain" />
+      <div>
+        <h1 class="text-base font-bold tracking-tight leading-none" style="color:#074973">AeroVid</h1>
+        <p class="text-[11px] text-gray-400 font-medium tracking-wide">CASTILLA-LA MANCHA · ANALÍTICA MULTIESPECTRAL</p>
+      </div>
+    </div>
+
+    <div class="flex items-center gap-4">
+      <div class="hidden sm:flex items-center gap-2 text-xs text-gray-500 bg-gray-50 px-3 py-1.5 rounded-full border border-gray-100">
+        <span class="w-2 h-2 rounded-full pulse-dot" style="background:#90BF6F"></span>
+        Datos en Vivo
+      </div>
+      <div class="hidden md:flex items-center gap-2 text-xs text-gray-500">
+        <i data-lucide="calendar" class="w-3.5 h-3.5"></i>
+        <span id="currentDate"></span>
+      </div>
+      <div class="w-8 h-8 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-sm cursor-pointer" style="background: linear-gradient(135deg, #074973, #58A6A6)">JC</div>
+    </div>
+  </nav>
+
+  <!-- ═══════════════ SIDEBAR ═══════════════ -->
+  <aside class="sidebar bg-white border-r border-gray-200 p-5 space-y-6">
+
+    <!-- Field selector -->
+    <div class="animate-in" style="animation-delay:.05s">
+      <label class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-2 block">Campo / Zona</label>
+      <select id="fieldSelector" class="w-full px-3 py-2.5 rounded-xl border border-gray-200 bg-gray-50 text-sm font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-brand-300 focus:border-navy-500 transition cursor-pointer">
+        <option value="pinar">Finca El Pinar</option>
+        <option value="sur">Viñedo Sur</option>
+        <option value="cerro">Parcela Cerro Alto</option>
+        <option value="molino">Camino del Molino</option>
+      </select>
+    </div>
+
+    <!-- Multispectral layers -->
+    <div class="animate-in" style="animation-delay:.1s">
+      <label class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-3 block">Capas Multiespectrales</label>
+      <div class="space-y-2" id="filterBtns">
+        <button class="filter-btn active" data-layer="ndvi" id="btn-ndvi">
+          <span class="w-3 h-3 rounded-full bg-gradient-to-r from-green-500 to-yellow-400 flex-shrink-0"></span>
+          NDVI · Vigor Vegetativo
+        </button>
+        <button class="filter-btn" data-layer="water" id="btn-water">
+          <span class="w-3 h-3 rounded-full bg-gradient-to-r from-blue-500 to-amber-500 flex-shrink-0"></span>
+          Estrés Hídrico · Humedad
+        </button>
+        <button class="filter-btn" data-layer="rgb" id="btn-rgb">
+          <span class="w-3 h-3 rounded-full bg-gradient-to-r from-emerald-400 to-emerald-600 flex-shrink-0"></span>
+          RGB · Color Real
+        </button>
+      </div>
+    </div>
+
+    <hr class="border-gray-100"/>
+
+    <!-- Drone Status -->
+    <div class="animate-in" style="animation-delay:.15s">
+      <label class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-3 block">Estado DJI Dock 3</label>
+      <div class="card !p-4 space-y-3">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <div class="w-7 h-7 rounded-lg flex items-center justify-center" style="background:#e8f4fc">
+              <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" style="color:#074973" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                <path d="M12 12m-2 0a2 2 0 1 0 4 0 2 2 0 1 0 -4 0"/>
+                <path d="M5 8l4 3m5.5 0l4.5-3M9 13l-4 3m9.5-3l4.5 3"/>
+              </svg>
+            </div>
+            <span class="text-sm font-semibold text-gray-800">Matrice 3D</span>
+          </div>
+          <span class="status-badge text-navy-600" style="background:#e8f4fc">
+            <span class="w-1.5 h-1.5 rounded-full pulse-dot" style="background:#58A6A6"></span>
+            En Espera
+          </span>
+        </div>
+        <div class="grid grid-cols-2 gap-2 text-xs">
+          <div class="bg-gray-50 rounded-lg p-2.5">
+            <span class="text-gray-400 block mb-0.5">Batería</span>
+            <div class="flex items-center gap-1.5">
+              <div class="w-full bg-gray-200 rounded-full h-1.5">
+                <div class="h-1.5 rounded-full" style="width:92%;background:#90BF6F"></div>
+              </div>
+              <span class="font-semibold text-gray-700">92%</span>
+            </div>
+          </div>
+          <div class="bg-gray-50 rounded-lg p-2.5">
+            <span class="text-gray-400 block mb-0.5">Señal</span>
+            <div class="flex items-center gap-1">
+              <div class="flex gap-px items-end">
+                <div class="w-1 h-1.5 rounded-sm" style="background:#58A6A6"></div>
+                <div class="w-1 h-2.5 rounded-sm" style="background:#58A6A6"></div>
+                <div class="w-1 h-3.5 rounded-sm" style="background:#58A6A6"></div>
+                <div class="w-1 h-4.5 rounded-sm bg-gray-300"></div>
+              </div>
+              <span class="font-semibold text-gray-700 ml-1">Buena</span>
+            </div>
+          </div>
+        </div>
+        <div class="text-[11px] text-gray-400 flex items-center gap-1.5">
+          <i data-lucide="clock" class="w-3 h-3"></i>
+          Último vuelo: hace 2 horas · Dock cargando
+        </div>
+      </div>
+    </div>
+
+    <hr class="border-gray-100"/>
+
+    <!-- Quick actions -->
+    <div class="animate-in" style="animation-delay:.2s">
+      <label class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-3 block">Acciones Rápidas</label>
+      <div class="space-y-2">
+        <button class="w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl text-white text-sm font-semibold shadow-md hover:shadow-lg transition-all duration-200 hover:-translate-y-0.5" style="background: linear-gradient(135deg, #074973, #58A6A6); box-shadow: 0 4px 14px rgba(7,73,115,.25)">
+          <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 12m-2 0a2 2 0 1 0 4 0 2 2 0 1 0 -4 0"/><path d="M5 8l4 3m5.5 0l4.5-3M9 13l-4 3m9.5-3l4.5 3"/></svg>
+          Lanzar Misión de Vuelo
+        </button>
+        <button class="w-full flex items-center gap-2.5 px-3.5 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50 transition">
+          <i data-lucide="download" class="w-4 h-4"></i>
+          Exportar Informe (PDF)
+        </button>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- ═══════════════ MAP AREA ═══════════════ -->
+  <main class="map-area">
+    <div id="map" class="w-full h-full"></div>
+    <div class="map-overlay-bottom"></div>
+
+    <!-- Map legend -->
+    <div class="absolute bottom-5 left-5 z-[600] bg-white/90 backdrop-blur-md rounded-xl border border-gray-200 shadow-lg px-4 py-3 animate-in" id="mapLegend">
+      <p class="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2" id="legendTitle">NDVI — Vigor Vegetativo</p>
+      <div class="flex items-center gap-3 text-xs" id="legendItems">
+        <div class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-green-500"></span> Sano</div>
+        <div class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-yellow-400"></span> Regular</div>
+        <div class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full bg-red-500"></span> Estresado</div>
+      </div>
+    </div>
+
+    <!-- Coordinate readout -->
+    <div class="absolute top-4 left-4 z-[600] bg-white/80 backdrop-blur-md rounded-lg border border-gray-200 shadow px-3 py-1.5 text-[11px] text-gray-500 font-mono" id="coordReadout">
+      39.1827°N, 3.0512°O
+    </div>
+  </main>
+
+  <!-- ═══════════════ DATA PANEL ═══════════════ -->
+  <section class="data-panel bg-gray-50/80 border-l border-gray-200 p-5 space-y-5">
+
+    <!-- Weather cards -->
+    <div class="animate-in" style="animation-delay:.05s">
+      <label class="text-[11px] font-semibold text-gray-400 uppercase tracking-wider mb-3 block">Clima y Entorno</label>
+      <div class="grid grid-cols-3 gap-2.5">
+        <!-- Temperature -->
+        <div class="card !p-3 text-center">
+          <div class="w-8 h-8 mx-auto rounded-lg flex items-center justify-center mb-2" style="background:#fef3e8">
+            <i data-lucide="thermometer" class="w-4 h-4 text-orange-500"></i>
+          </div>
+          <div class="kpi-value text-gray-800" style="font-size:22px">34°</div>
+          <div class="text-[10px] text-gray-400 mt-1 font-medium">Temperatura</div>
+        </div>
+        <!-- Humidity -->
+        <div class="card !p-3 text-center">
+          <div class="w-8 h-8 mx-auto rounded-lg flex items-center justify-center mb-2" style="background:#edf8f8">
+            <i data-lucide="droplets" class="w-4 h-4" style="color:#58A6A6"></i>
+          </div>
+          <div class="kpi-value text-gray-800" style="font-size:22px">42%</div>
+          <div class="text-[10px] text-gray-400 mt-1 font-medium">Humedad</div>
+        </div>
+        <!-- Wind -->
+        <div class="card !p-3 text-center">
+          <div class="w-8 h-8 mx-auto rounded-lg flex items-center justify-center mb-2" style="background:#e8f4fc">
+            <i data-lucide="wind" class="w-4 h-4" style="color:#074973"></i>
+          </div>
+          <div class="kpi-value text-gray-800" style="font-size:22px">12</div>
+          <div class="text-[10px] text-gray-400 mt-1 font-medium">Viento km/h</div>
+        </div>
+      </div>
+
+      <!-- Flight condition -->
+      <div class="mt-2.5 flex items-center gap-2 rounded-lg px-3 py-2 text-xs font-medium" style="background:#f2f8ed; border:1px solid #c6e1b0; color:#476a33">
+        <i data-lucide="check-circle" class="w-3.5 h-3.5"></i>
+        Condiciones de vuelo: Favorables · Viento &lt; 15 km/h
+      </div>
+    </div>
+
+    <!-- Health Chart -->
+    <div class="card animate-in" style="animation-delay:.1s">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-bold text-gray-800">Salud del Viñedo</h3>
+        <span class="text-[10px] text-gray-400 font-medium">Todas las parcelas</span>
+      </div>
+      <div class="flex items-center gap-5">
+        <div class="w-[140px] h-[140px] flex-shrink-0">
+          <canvas id="healthChart"></canvas>
+        </div>
+        <div class="space-y-2.5 text-xs flex-1">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full" style="background:#90BF6F"></span><span class="text-gray-600">Saludable</span></div>
+            <span class="font-bold text-gray-800">60%</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full" style="background:#A2A6F2"></span><span class="text-gray-600">Atención</span></div>
+            <span class="font-bold text-gray-800">25%</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-2"><span class="w-2.5 h-2.5 rounded-full bg-red-500"></span><span class="text-gray-600">Crítico</span></div>
+            <span class="font-bold text-gray-800">15%</span>
+          </div>
+          <hr class="border-gray-100 mt-1"/>
+          <div class="text-[11px] text-gray-400"><strong class="text-gray-600">98,4 ha</strong> escaneadas hoy</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- NDVI Trend -->
+    <div class="card animate-in" style="animation-delay:.15s">
+      <div class="flex items-center justify-between mb-3">
+        <h3 class="text-sm font-bold text-gray-800">Tendencia NDVI (7 días)</h3>
+        <span class="status-badge text-[10px]" style="background:#f2f8ed; color:#476a33">↑ +3,2%</span>
+      </div>
+      <div class="trend-chart-container">
+        <canvas id="ndviTrendChart"></canvas>
+      </div>
+    </div>
+
+    <!-- Plot status table -->
+    <div class="card animate-in" style="animation-delay:.2s">
+      <h3 class="text-sm font-bold text-gray-800 mb-3">Resumen de Parcelas</h3>
+      <div class="space-y-2" id="plotStatusList">
+        <!-- Filled by JS -->
+      </div>
+    </div>
+
+    <!-- Alerts -->
+    <div class="card animate-in border-l-4" style="animation-delay:.25s; border-left-color:#A2A6F2">
+      <div class="flex items-center gap-2 mb-2">
+        <i data-lucide="alert-triangle" class="w-4 h-4" style="color:#A2A6F2"></i>
+        <h3 class="text-sm font-bold text-gray-800">Alertas Activas</h3>
+        <span class="ml-auto status-badge text-[10px]" style="background:#f0f1fe; color:#3f3fb8">3 alertas</span>
+      </div>
+      <div class="space-y-2 text-xs text-gray-600">
+        <div class="flex items-start gap-2"><span class="w-1.5 h-1.5 rounded-full bg-red-500 mt-1.5 flex-shrink-0"></span>Parcela 3 — Estrés hídrico severo detectado en sector SO</div>
+        <div class="flex items-start gap-2"><span class="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style="background:#A2A6F2"></span>Parcela 1 — Indicios tempranos de mildiu · Control fitosanitario recomendado</div>
+        <div class="flex items-start gap-2"><span class="w-1.5 h-1.5 rounded-full mt-1.5 flex-shrink-0" style="background:#A2A6F2"></span>Parcela 4 — Descenso del NDVI del 8% respecto a la semana anterior</div>
+      </div>
+    </div>
+
+  </section>
+
+</div>
+
+<script>
+// ────────────────────────────────────────────────
+// Date (Spanish)
+// ────────────────────────────────────────────────
+document.getElementById('currentDate').textContent = new Date().toLocaleDateString('es-ES',{weekday:'short',day:'numeric',month:'short',year:'numeric'});
+
+// ────────────────────────────────────────────────
+// LEAFLET MAP — centered on vineyard fields
+// ────────────────────────────────────────────────
+const map = L.map('map',{zoomControl:false}).setView([39.1827, -3.0512], 16);
+
+L.control.zoom({position:'topright'}).addTo(map);
+
+// Satellite basemap (Esri)
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',{
+  maxZoom:19,
+  attribution:'Tiles &copy; Esri'
+}).addTo(map);
+
+// ── Coordinate readout ──
+map.on('mousemove', function(e){
+  document.getElementById('coordReadout').textContent =
+    e.latlng.lat.toFixed(4) + '°N, ' + Math.abs(e.latlng.lng).toFixed(4) + '°O';
+});
+
+// ────────────────────────────────────────────────
+// VINEYARD PLOT DATA (positioned over fields)
+// ────────────────────────────────────────────────
+const plotsData = [
+  {
+    id: 1,
+    name: 'Parcela 1 — Tempranillo',
+    coords: [[39.1855,-3.0560],[39.1855,-3.0520],[39.1840,-3.0520],[39.1840,-3.0560]],
+    ndvi:'#90BF6F', water:'#3b82f6', rgb:'rgba(144,191,111,.2)',
+    alert: `<div style="max-width:220px">
+      <div style="font-weight:700;color:#074973;font-size:14px;margin-bottom:6px">🍇 Parcela 1 — Tempranillo</div>
+      <div style="color:#d97706;font-weight:600;margin-bottom:4px">⚠️ Indicios tempranos de mildiu</div>
+      <div style="color:#6b7280;font-size:12px">NDVI: 0,72 · Control fitosanitario recomendado<br/>Último escaneo: 25 Abr 2026, 09:14</div>
+    </div>`,
+    status:'warning', ndviVal:0.72, area:'24,2 ha'
+  },
+  {
+    id: 2,
+    name: 'Parcela 2 — Airén',
+    coords: [[39.1855,-3.0515],[39.1855,-3.0470],[39.1840,-3.0470],[39.1840,-3.0515]],
+    ndvi:'#90BF6F', water:'#3b82f6', rgb:'rgba(144,191,111,.2)',
+    alert: `<div style="max-width:220px">
+      <div style="font-weight:700;color:#074973;font-size:14px;margin-bottom:6px">🍇 Parcela 2 — Airén</div>
+      <div style="color:#16a34a;font-weight:600;margin-bottom:4px">✅ Condición óptima</div>
+      <div style="color:#6b7280;font-size:12px">NDVI: 0,84 · Sin acción requerida<br/>Último escaneo: 25 Abr 2026, 09:31</div>
+    </div>`,
+    status:'healthy', ndviVal:0.84, area:'31,5 ha'
+  },
+  {
+    id: 3,
+    name: 'Parcela 3 — Cencibel',
+    coords: [[39.1835,-3.0560],[39.1835,-3.0515],[39.1818,-3.0515],[39.1818,-3.0560]],
+    ndvi:'#ef4444', water:'#d97706', rgb:'rgba(239,68,68,.15)',
+    alert: `<div style="max-width:220px">
+      <div style="font-weight:700;color:#074973;font-size:14px;margin-bottom:6px">🍇 Parcela 3 — Cencibel</div>
+      <div style="color:#dc2626;font-weight:600;margin-bottom:4px">🔴 Estrés hídrico severo detectado</div>
+      <div style="color:#6b7280;font-size:12px">NDVI: 0,38 · Riego urgente necesario<br/>Índice de humedad: 0,21 (Crítico)<br/>Último escaneo: 25 Abr 2026, 09:47</div>
+    </div>`,
+    status:'critical', ndviVal:0.38, area:'18,7 ha'
+  },
+  {
+    id: 4,
+    name: 'Parcela 4 — Macabeo',
+    coords: [[39.1835,-3.0510],[39.1835,-3.0470],[39.1820,-3.0470],[39.1820,-3.0510]],
+    ndvi:'#eab308', water:'#60a5fa', rgb:'rgba(234,179,8,.15)',
+    alert: `<div style="max-width:220px">
+      <div style="font-weight:700;color:#074973;font-size:14px;margin-bottom:6px">🍇 Parcela 4 — Macabeo</div>
+      <div style="color:#d97706;font-weight:600;margin-bottom:4px">⚠️ Descenso moderado de vegetación</div>
+      <div style="color:#6b7280;font-size:12px">NDVI: 0,58 · Monitorizar de cerca<br/>Descenso del 8% respecto a la semana anterior<br/>Último escaneo: 25 Abr 2026, 10:02</div>
+    </div>`,
+    status:'warning', ndviVal:0.58, area:'22,0 ha'
+  },
+  {
+    id: 5,
+    name: 'Parcela 5 — Garnacha',
+    coords: [[39.1815,-3.0540],[39.1815,-3.0485],[39.1800,-3.0485],[39.1800,-3.0540]],
+    ndvi:'#90BF6F', water:'#3b82f6', rgb:'rgba(144,191,111,.2)',
+    alert: `<div style="max-width:220px">
+      <div style="font-weight:700;color:#074973;font-size:14px;margin-bottom:6px">🍇 Parcela 5 — Garnacha</div>
+      <div style="color:#16a34a;font-weight:600;margin-bottom:4px">✅ Condición óptima</div>
+      <div style="color:#6b7280;font-size:12px">NDVI: 0,81 · Fase de crecimiento vigoroso<br/>Último escaneo: 25 Abr 2026, 10:18</div>
+    </div>`,
+    status:'healthy', ndviVal:0.81, area:'26,0 ha'
+  }
+];
+
+// ── Create polygons ──
+let currentLayer = 'ndvi';
+const polygonLayers = [];
+
+plotsData.forEach(p => {
+  const poly = L.polygon(p.coords, {
+    color: '#fff',
+    weight: 2,
+    opacity: .9,
+    fillColor: p.ndvi,
+    fillOpacity: .55
+  }).addTo(map);
+
+  poly.bindPopup(p.alert, { closeButton: true, className: 'custom-popup' });
+
+  poly.on('mouseover', function(){ this.setStyle({ weight:3, fillOpacity:.75 }); });
+  poly.on('mouseout',  function(){ this.setStyle({ weight:2, fillOpacity:.55 }); });
+
+  polygonLayers.push({ poly, data: p });
+});
+
+// ── Layer legend config ──
+const layerConfig = {
+  ndvi: {
+    title: 'NDVI — Vigor Vegetativo',
+    items: [
+      { color: 'background:#90BF6F', label: 'Sano' },
+      { color: 'background:#eab308', label: 'Regular' },
+      { color: 'background:#ef4444', label: 'Estresado' },
+    ]
+  },
+  water: {
+    title: 'Estrés Hídrico — Humedad',
+    items: [
+      { color: 'background:#3b82f6', label: 'Hidratado' },
+      { color: 'background:#60a5fa', label: 'Moderado' },
+      { color: 'background:#d97706', label: 'Sequía' },
+    ]
+  },
+  rgb: {
+    title: 'RGB — Color Real',
+    items: [
+      { color: 'background:#90BF6F', label: 'Cubierta' },
+      { color: 'background:#92700c', label: 'Suelo' },
+      { color: 'background:#b0b0b0', label: 'Sombra' },
+    ]
+  }
+};
+
+// ── Switch layers ──
+function switchLayer(layer) {
+  currentLayer = layer;
+  polygonLayers.forEach(({ poly, data }) => {
+    poly.setStyle({ fillColor: data[layer], fillOpacity: layer==='rgb' ? .25 : .55 });
+  });
+
+  document.querySelectorAll('.filter-btn').forEach(btn => btn.classList.remove('active'));
+  document.querySelector(`[data-layer="${layer}"]`).classList.add('active');
+
+  const cfg = layerConfig[layer];
+  document.getElementById('legendTitle').textContent = cfg.title;
+  document.getElementById('legendItems').innerHTML = cfg.items.map(i =>
+    `<div class="flex items-center gap-1.5"><span class="w-3 h-3 rounded-full" style="${i.color}"></span> ${i.label}</div>`
+  ).join('');
+}
+
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => switchLayer(btn.dataset.layer));
+});
+
+// ── Field selector ──
+const fieldCoords = {
+  pinar:  { center: [39.1827, -3.0512], zoom: 16 },
+  sur:    { center: [39.175, -3.060], zoom: 16 },
+  cerro:  { center: [39.190, -3.040], zoom: 16 },
+  molino: { center: [39.178, -3.065], zoom: 16 },
+};
+
+document.getElementById('fieldSelector').addEventListener('change', function(){
+  const fc = fieldCoords[this.value];
+  map.flyTo(fc.center, fc.zoom, { duration: 1.2 });
+});
+
+// ────────────────────────────────────────────────
+// PLOT STATUS LIST
+// ────────────────────────────────────────────────
+const statusColors = {
+  healthy:'background:#f2f8ed; color:#476a33',
+  warning:'background:#f0f1fe; color:#3f3fb8',
+  critical:'background:#fce4e7; color:#b01a3a'
+};
+const statusDots = { healthy:'background:#90BF6F', warning:'background:#A2A6F2', critical:'background:#ef4444' };
+const statusLabels = { healthy:'Saludable', warning:'Atención', critical:'Crítico' };
+
+document.getElementById('plotStatusList').innerHTML = plotsData.map(p => `
+  <div class="flex items-center justify-between py-2 px-2 rounded-lg hover:bg-gray-50 transition cursor-pointer" onclick="map.flyTo([${(p.coords[0][0]+p.coords[2][0])/2},${(p.coords[0][1]+p.coords[2][1])/2}],17,{duration:.8})">
+    <div class="flex items-center gap-2">
+      <span class="w-2 h-2 rounded-full flex-shrink-0" style="${statusDots[p.status]}"></span>
+      <span class="text-xs font-medium text-gray-700">${p.name}</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="text-[10px] font-mono text-gray-400">${p.ndviVal.toFixed(2)}</span>
+      <span class="status-badge text-[10px]" style="${statusColors[p.status]}">${statusLabels[p.status]}</span>
+    </div>
+  </div>
+`).join('');
+
+// ────────────────────────────────────────────────
+// CHART.JS — Health Donut
+// ────────────────────────────────────────────────
+const healthCtx = document.getElementById('healthChart').getContext('2d');
+new Chart(healthCtx, {
+  type: 'doughnut',
+  data: {
+    labels: ['Saludable','Atención','Crítico'],
+    datasets: [{
+      data: [60, 25, 15],
+      backgroundColor: ['#90BF6F','#A2A6F2','#ef4444'],
+      borderColor: '#fff',
+      borderWidth: 3,
+      borderRadius: 6,
+      hoverOffset: 6
+    }]
+  },
+  options: {
+    cutout: '72%',
+    responsive: true,
+    maintainAspectRatio: true,
+    plugins: {
+      legend: { display: false },
+      tooltip: {
+        backgroundColor: '#0D0D0D',
+        titleFont: { family: 'Inter', weight: '600' },
+        bodyFont: { family: 'Inter' },
+        cornerRadius: 8,
+        padding: 10,
+        callbacks: {
+          label: ctx => ` ${ctx.label}: ${ctx.parsed}%`
+        }
+      }
+    }
+  }
+});
+
+// ────────────────────────────────────────────────
+// CHART.JS — NDVI Trend Line (FIXED)
+// ────────────────────────────────────────────────
+const trendCtx = document.getElementById('ndviTrendChart').getContext('2d');
+const gradient = trendCtx.createLinearGradient(0, 0, 0, 150);
+gradient.addColorStop(0, 'rgba(144,191,111,.22)');
+gradient.addColorStop(1, 'rgba(144,191,111,0)');
+
+new Chart(trendCtx, {
+  type: 'line',
+  data: {
+    labels: ['19 Abr','20 Abr','21 Abr','22 Abr','23 Abr','24 Abr','25 Abr'],
+    datasets: [{
+      label: 'NDVI Medio',
+      data: [0.68, 0.66, 0.69, 0.71, 0.70, 0.73, 0.74],
+      fill: true,
+      backgroundColor: gradient,
+      borderColor: '#90BF6F',
+      borderWidth: 2.5,
+      pointBackgroundColor: '#fff',
+      pointBorderColor: '#90BF6F',
+      pointBorderWidth: 2,
+      pointRadius: 4,
+      pointHoverRadius: 6,
+      tension: 0.35
+    }]
+  },
+  options: {
+    responsive: true,
+    maintainAspectRatio: false,
+    layout: {
+      padding: { top: 5, bottom: 5, left: 0, right: 0 }
+    },
+    scales: {
+      y: {
+        min: 0.55,
+        max: 0.85,
+        ticks: {
+          font: { family:'Inter', size:10 },
+          color:'#94a3b8',
+          stepSize: 0.05,
+          callback: v => v.toFixed(2)
+        },
+        grid: { color:'#f1f5f9', drawBorder:false }
+      },
+      x: {
+        ticks: { font: { family:'Inter', size:10 }, color:'#94a3b8' },
+        grid: { display:false }
+      }
+    },
+    plugins: {
+      legend: { display:false },
+      tooltip: {
+        backgroundColor:'#0D0D0D',
+        titleFont:{family:'Inter',weight:'600'},
+        bodyFont:{family:'Inter'},
+        cornerRadius:8,
+        padding:10,
+        callbacks:{ label: ctx => ` NDVI: ${ctx.parsed.y.toFixed(2)}` }
+      }
+    },
+    interaction: { intersect:false, mode:'index' }
+  }
+});
+
+// ────────────────────────────────────────────────
+// LUCIDE ICONS INIT
+// ────────────────────────────────────────────────
+lucide.createIcons();
+
+</script>
+</body>
+</html>
